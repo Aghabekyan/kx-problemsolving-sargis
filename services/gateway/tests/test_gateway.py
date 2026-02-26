@@ -1,4 +1,3 @@
-from typing import Optional
 from unittest.mock import patch
 
 import httpx
@@ -35,8 +34,8 @@ def _data_response(instance: str, url: str) -> httpx.Response:
 
 
 def _mock_get(
-    down: Optional[set[str]] = None,
-    data_log: Optional[list[str]] = None,
+    down: set[str] | None = None,
+    data_log: list[str] | None = None,
 ):
     down = down or set()
 
@@ -61,7 +60,7 @@ def _mock_get(
 
 async def _seed_health(
     runtime: RuntimeFixture,
-    down: Optional[set[str]] = None,
+    down: set[str] | None = None,
 ) -> None:
     client, checker = runtime
     with patch.object(client, "get", side_effect=_mock_get(down=down)):
