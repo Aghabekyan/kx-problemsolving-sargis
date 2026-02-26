@@ -7,8 +7,8 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ValidationError
 
-from health import HealthChecker
-from counter import RoundRobinCounter
+from core.health import HealthChecker
+from core.counter import RoundRobinCounter
 
 
 def _service_name_from_url(url: str) -> str:
