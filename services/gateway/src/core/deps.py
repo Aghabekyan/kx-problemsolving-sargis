@@ -3,16 +3,20 @@ from typing import Annotated, cast
 import httpx
 from fastapi import Depends, Request
 
-from service import GatewayService
+from ..service import GatewayService
 from .counter import RoundRobinCounter
 from .health import HealthChecker
 
 
-async def get_http_client(request: Request) -> httpx.AsyncClient:
+async def get_http_client(
+    request: Request,
+) -> httpx.AsyncClient:
     return cast(httpx.AsyncClient, request.app.state.client)
 
 
-async def get_health_checker(request: Request) -> HealthChecker:
+async def get_health_checker(
+    request: Request,
+) -> HealthChecker:
     return cast(HealthChecker, request.app.state.health_checker)
 
 
