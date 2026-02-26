@@ -1,20 +1,17 @@
-from __future__ import annotations
-
 import logging
 
 import httpx
 from pydantic import ValidationError
 
-from core.counter import RoundRobinCounter
-from core.health import HealthChecker
-from models import DataResponse, StatusResponse, StorageStatus
+from .core.counter import RoundRobinCounter
+from .core.health import HealthChecker
+from .models import DataResponse, StatusResponse, StorageStatus
 
 logger = logging.getLogger(__name__)
 
 
 class NoStorageAvailableError(Exception):
     """Raised when no storage backend can serve the request."""
-
 
 class GatewayService:
     """Encapsulates gateway routing/fallback behavior."""
@@ -48,12 +45,8 @@ class GatewayService:
             try:
                 resp = await self._client.get(f"{url}/data")
                 resp.raise_for_status()
-                payload = resp.json()
-                return DataResponse(
-                    instance=str(payload.get("service", url)),
-                    data=payload.get("payload", []),
-                )
-            except (httpx.HTTPError, ValueError, ValidationError, TypeError) as exc:
+                return DataResponse(**resp.json())
+            except (httpx.HTTPError, ValueError, ValidationError) as exc:
                 logger.warning(
                     "Storage request failed for %s: %s. Marking unhealthy and trying next.",
                     url,

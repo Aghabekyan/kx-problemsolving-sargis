@@ -1,6 +1,11 @@
 from fastapi import FastAPI
 
-from routes import router
+from .config import settings
+from .routes import router
 
-app = FastAPI(title="Storage Service", version="1.0.0")
+
+app = FastAPI(
+    title=f"Storage Service ({settings.instance_id})",
+)
+
 app.include_router(router)

@@ -1,6 +1,13 @@
-from __future__ import annotations
-
 from pydantic import BaseModel
+
+
+class StorageStatus(BaseModel):
+    url: str
+    status: str
+
+
+class StatusResponse(BaseModel):
+    services: list[StorageStatus]
 
 
 class DataItem(BaseModel):
@@ -14,13 +21,5 @@ class DataResponse(BaseModel):
     data: list[DataItem]
 
 
-DataResponse.model_rebuild()
-
-
-class StorageStatus(BaseModel):
-    url: str
-    status: str
-
-
-class StatusResponse(BaseModel):
-    services: list[StorageStatus]
+class ErrorResponse(BaseModel):
+    detail: str
