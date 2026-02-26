@@ -1,0 +1,38 @@
+services:
+  gateway:
+    build:
+      context: ./gateway_service
+    container_name: gateway
+    environment:
+      STORAGE_URLS: http://storage1:8000,http://storage2:8000,http://storage3:8000
+      REQUEST_TIMEOUT_SECONDS: "1.5"
+      HEALTHCHECK_INTERVAL_SECONDS: "3"
+    ports:
+      - "8080:8080"
+
+  storage1:
+    build:
+      context: ./storage_service
+    container_name: storage1
+    environment:
+      SERVICE_NAME: storage1
+    ports:
+      - "8001:8000"
+
+  storage2:
+    build:
+      context: ./storage_service
+    container_name: storage2
+    environment:
+      SERVICE_NAME: storage2
+    ports:
+      - "8002:8000"
+
+  storage3:
+    build:
+      context: ./storage_service
+    container_name: storage3
+    environment:
+      SERVICE_NAME: storage3
+    ports:
+      - "8003:8000"
