@@ -2,12 +2,12 @@ FROM python:3.13-slim
 
 WORKDIR /app
 
-
 COPY requirements.txt .
-RUN pip install --no-cache-dir --progress-bar off -r requirements.txt
+RUN pip install -r requirements.txt
 
-COPY main.py .
-COPY routes.py .
+COPY src ./src
+
+WORKDIR /app/src
 
 EXPOSE 8000
 
