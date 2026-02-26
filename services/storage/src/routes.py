@@ -11,15 +11,11 @@ def _utc_now_iso() -> str:
 
 SERVICE_NAME = os.getenv("SERVICE_NAME", socket.gethostname())
 
-DUMMY_PAYLOAD = {
-    "company": "KX",
-    "dataset": "dummy-in-memory-data",
-    "records": [
-        {"id": 1, "name": "alpha"},
-        {"id": 2, "name": "beta"},
-        {"id": 3, "name": "gamma"},
-    ],
-}
+DUMMY_PAYLOAD = [
+    {"id": 1, "name": "item-1", "value": "alpha"},
+    {"id": 2, "name": "item-2", "value": "beta"},
+    {"id": 3, "name": "item-3", "value": "gamma"},
+]
 
 router = APIRouter()
 

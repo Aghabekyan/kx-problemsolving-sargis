@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, ValidationError
 
 
 def _utc_now_iso() -> str:
@@ -62,6 +63,17 @@ ROUND_ROBIN_INDEX = 0
 ROUND_ROBIN_LOCK = asyncio.Lock()
 
 router = APIRouter()
+
+
+class DataItem(BaseModel):
+    id: int
+    name: str
+    value: str
+
+
+class DataResponse(BaseModel):
+    instance: str
+    data: list[DataItem]
 
 
 async def _refresh_service_status(service: dict[str, str]) -> None:
@@ -174,8 +186,8 @@ async def status() -> dict[str, Any]:
     }
 
 
-@router.get("/data")
-async def data() -> dict[str, Any]:
+@router.get("/data", response_model=DataResponse)
+async def data() -> DataResponse:
     await _refresh_all_statuses()
     ordered_indices = await _ordered_service_indices()
 
@@ -189,11 +201,18 @@ async def data() -> dict[str, Any]:
         if payload is None:
             continue
 
+        try:
+            parsed_payload = DataResponse(
+                instance=str(payload.get("service", service["name"])),
+                data=payload.get("payload", []),
+            )
+        except ValidationError as exc:
+            service_status.available = False
+            service_status.last_error = f"ValidationError: {exc}"
+            continue
+
         await _set_round_robin_index(index + 1)
-        return {
-            "source_service": service["name"],
-            "data": payload,
-        }
+        return parsed_payload
 
     raise HTTPException(
         status_code=503,
