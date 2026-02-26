@@ -4,9 +4,9 @@ services:
       context: ./services/gateway
     container_name: gateway
     environment:
-      STORAGE_URLS: http://storage1:8000,http://storage2:8000,http://storage3:8000
-      REQUEST_TIMEOUT_SECONDS: "1.5"
-      HEALTHCHECK_INTERVAL_SECONDS: "3"
+      STORAGE_SERVICES: http://storage1:8000,http://storage2:8000,http://storage3:8000
+      REQUEST_TIMEOUT: "1.5"
+      HEALTH_CHECK_INTERVAL: "3"
     ports:
       - "8080:8080"
 
