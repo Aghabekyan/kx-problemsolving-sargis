@@ -1,7 +1,5 @@
 import asyncio
 import os
-from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
@@ -9,9 +7,7 @@ import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ValidationError
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+from health import HealthChecker
 
 
 def _service_name_from_url(url: str) -> str:
@@ -27,13 +23,15 @@ def _parse_storage_urls(raw_urls: str) -> list[str]:
     return urls
 
 
-@dataclass
-class ServiceStatus:
+class DataItem(BaseModel):
+    id: int
     name: str
-    url: str
-    available: bool = False
-    last_checked: str | None = None
-    last_error: str | None = "Not checked yet"
+    value: str
+
+
+class DataResponse(BaseModel):
+    instance: str
+    data: list[DataItem]
 
 
 REQUEST_TIMEOUT_SECONDS = float(os.getenv("REQUEST_TIMEOUT_SECONDS", "1.5"))
@@ -52,126 +50,82 @@ SERVICES = [
     }
     for url in STORAGE_URLS
 ]
-STATUSES = {
-    service["name"]: ServiceStatus(name=service["name"], url=service["url"])
-    for service in SERVICES
-}
+SERVICE_NAME_BY_URL = {service["url"]: service["name"] for service in SERVICES}
 
 HTTP_CLIENT: httpx.AsyncClient | None = None
-HEALTH_TASK: asyncio.Task[Any] | None = None
+HEALTH_CHECKER: HealthChecker | None = None
 ROUND_ROBIN_INDEX = 0
 ROUND_ROBIN_LOCK = asyncio.Lock()
 
 router = APIRouter()
 
 
-class DataItem(BaseModel):
-    id: int
-    name: str
-    value: str
-
-
-class DataResponse(BaseModel):
-    instance: str
-    data: list[DataItem]
-
-
-async def _refresh_service_status(service: dict[str, str]) -> None:
-    global HTTP_CLIENT
-
-    name = service["name"]
-    url = service["url"]
-    status = STATUSES[name]
-    checked_at = _utc_now_iso()
-
-    if HTTP_CLIENT is None:
-        status.available = False
-        status.last_checked = checked_at
-        status.last_error = "Gateway HTTP client is not initialized."
-        return
-
-    try:
-        response = await HTTP_CLIENT.get(f"{url}/health")
-        if response.status_code == 200:
-            status.available = True
-            status.last_error = None
-        else:
-            status.available = False
-            status.last_error = f"Health check returned HTTP {response.status_code}"
-    except Exception as exc:
-        status.available = False
-        status.last_error = f"{type(exc).__name__}: {exc}"
-
-    status.last_checked = checked_at
-
-
-async def _refresh_all_statuses() -> None:
-    await asyncio.gather(*(_refresh_service_status(service) for service in SERVICES))
-
-
-async def _healthcheck_loop() -> None:
-    while True:
-        await _refresh_all_statuses()
-        await asyncio.sleep(HEALTHCHECK_INTERVAL_SECONDS)
-
-
-async def _ordered_service_indices() -> list[int]:
-    async with ROUND_ROBIN_LOCK:
-        start = ROUND_ROBIN_INDEX
-    return list(range(start, len(SERVICES))) + list(range(0, start))
+def _get_health_checker() -> HealthChecker:
+    if HEALTH_CHECKER is None:
+        raise HTTPException(status_code=503, detail="Gateway health checker is not initialized.")
+    return HEALTH_CHECKER
 
 
 async def _set_round_robin_index(next_index: int) -> None:
     global ROUND_ROBIN_INDEX
     async with ROUND_ROBIN_LOCK:
-        ROUND_ROBIN_INDEX = next_index % len(SERVICES)
+        ROUND_ROBIN_INDEX = next_index
 
 
-async def _fetch_from_service(service: dict[str, str]) -> dict[str, Any] | None:
-    global HTTP_CLIENT
+async def _ordered_healthy_urls(healthy_urls: list[str]) -> tuple[int, list[str]]:
+    async with ROUND_ROBIN_LOCK:
+        start = ROUND_ROBIN_INDEX
 
-    name = service["name"]
-    url = service["url"]
-    status = STATUSES[name]
-    checked_at = _utc_now_iso()
+    if not healthy_urls:
+        return 0, []
 
-    if HTTP_CLIENT is None:
-        status.available = False
-        status.last_checked = checked_at
-        status.last_error = "Gateway HTTP client is not initialized."
+    start %= len(healthy_urls)
+    return start, healthy_urls[start:] + healthy_urls[:start]
+
+
+async def _fetch_data_from_url(url: str) -> DataResponse | None:
+    client = HTTP_CLIENT
+    if client is None:
         return None
 
+    checker = HEALTH_CHECKER
+    default_instance = SERVICE_NAME_BY_URL.get(url, url)
+
     try:
-        response = await HTTP_CLIENT.get(f"{url}/data")
+        response = await client.get(f"{url}/data")
         response.raise_for_status()
-        status.available = True
-        status.last_checked = checked_at
-        status.last_error = None
-        return response.json()
-    except Exception as exc:
-        status.available = False
-        status.last_checked = checked_at
-        status.last_error = f"{type(exc).__name__}: {exc}"
+        payload = response.json()
+        return DataResponse(
+            instance=str(payload.get("service", default_instance)),
+            data=payload.get("payload", []),
+        )
+    except (httpx.HTTPError, ValidationError, ValueError, TypeError):
+        if checker is not None:
+            checker.mark_unhealthy(url)
         return None
 
 
 async def startup_event() -> None:
-    global HTTP_CLIENT, HEALTH_TASK
+    global HTTP_CLIENT, HEALTH_CHECKER, ROUND_ROBIN_INDEX
+
     HTTP_CLIENT = httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS)
-    await _refresh_all_statuses()
-    HEALTH_TASK = asyncio.create_task(_healthcheck_loop())
+    HEALTH_CHECKER = HealthChecker(
+        client=HTTP_CLIENT,
+        all_urls=[service["url"] for service in SERVICES],
+        interval=HEALTHCHECK_INTERVAL_SECONDS,
+    )
+    await HEALTH_CHECKER.probe_once()
+    HEALTH_CHECKER.start()
+    ROUND_ROBIN_INDEX = 0
 
 
 async def shutdown_event() -> None:
-    global HTTP_CLIENT, HEALTH_TASK
+    global HTTP_CLIENT, HEALTH_CHECKER
 
-    if HEALTH_TASK is not None:
-        HEALTH_TASK.cancel()
-        try:
-            await HEALTH_TASK
-        except asyncio.CancelledError:
-            pass
-        HEALTH_TASK = None
+    checker = HEALTH_CHECKER
+    HEALTH_CHECKER = None
+    if checker is not None:
+        await checker.stop()
 
     if HTTP_CLIENT is not None:
         await HTTP_CLIENT.aclose()
@@ -180,38 +134,40 @@ async def shutdown_event() -> None:
 
 @router.get("/status")
 async def status() -> dict[str, Any]:
-    await _refresh_all_statuses()
+    checker = _get_health_checker()
+    statuses = checker.statuses
     return {
-        "services": [asdict(STATUSES[service["name"]]) for service in SERVICES],
+        "services": [
+            {
+                "name": service["name"],
+                "url": service["url"],
+                "status": statuses.get(service["url"], "down"),
+                "available": statuses.get(service["url"], "down") == "up",
+            }
+            for service in SERVICES
+        ],
     }
 
 
 @router.get("/data", response_model=DataResponse)
 async def data() -> DataResponse:
-    await _refresh_all_statuses()
-    ordered_indices = await _ordered_service_indices()
+    checker = _get_health_checker()
+    healthy_urls = checker.healthy_urls
 
-    for index in ordered_indices:
-        service = SERVICES[index]
-        service_status = STATUSES[service["name"]]
-        if not service_status.available:
+    if not healthy_urls:
+        raise HTTPException(
+            status_code=503,
+            detail="No Storage Services are currently available.",
+        )
+
+    start, candidates = await _ordered_healthy_urls(healthy_urls)
+
+    for offset, url in enumerate(candidates):
+        parsed_payload = await _fetch_data_from_url(url)
+        if parsed_payload is None:
             continue
 
-        payload = await _fetch_from_service(service)
-        if payload is None:
-            continue
-
-        try:
-            parsed_payload = DataResponse(
-                instance=str(payload.get("service", service["name"])),
-                data=payload.get("payload", []),
-            )
-        except ValidationError as exc:
-            service_status.available = False
-            service_status.last_error = f"ValidationError: {exc}"
-            continue
-
-        await _set_round_robin_index(index + 1)
+        await _set_round_robin_index(start + offset + 1)
         return parsed_payload
 
     raise HTTPException(
