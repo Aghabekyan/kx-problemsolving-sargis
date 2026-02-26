@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 class NoStorageAvailableError(Exception):
     """Raised when no storage backend can serve the request."""
 
+
 class GatewayService:
     """Encapsulates gateway routing/fallback behavior."""
 

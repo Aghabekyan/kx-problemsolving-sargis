@@ -6,7 +6,6 @@ class Settings(BaseSettings):
     request_timeout: float = 2.0
     health_check_interval: float = 5.0
 
-
     @property
     def storage_urls(self) -> list[str]:
         urls = [url.strip() for url in self.storage_services.split(",") if url.strip()]

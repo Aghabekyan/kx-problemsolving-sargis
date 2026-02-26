@@ -6,6 +6,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+
 class HealthChecker:
     """Background health-checker that maintains a cached list of healthy URLs.
 
