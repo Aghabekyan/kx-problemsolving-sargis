@@ -1,7 +1,7 @@
 services:
   gateway:
     build:
-      context: ./gateway_service
+      context: ./services/gateway
     container_name: gateway
     environment:
       STORAGE_URLS: http://storage1:8000,http://storage2:8000,http://storage3:8000
@@ -12,7 +12,7 @@ services:
 
   storage1:
     build:
-      context: ./storage_service
+      context: ./services/storage
     container_name: storage1
     environment:
       SERVICE_NAME: storage1
@@ -21,7 +21,7 @@ services:
 
   storage2:
     build:
-      context: ./storage_service
+      context: ./services/storage
     container_name: storage2
     environment:
       SERVICE_NAME: storage2
@@ -30,7 +30,7 @@ services:
 
   storage3:
     build:
-      context: ./storage_service
+      context: ./services/storage
     container_name: storage3
     environment:
       SERVICE_NAME: storage3

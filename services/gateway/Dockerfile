@@ -6,6 +6,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --progress-bar off -r requirements.txt
 
 COPY main.py .
+COPY routes.py .
 
 EXPOSE 8080
 
