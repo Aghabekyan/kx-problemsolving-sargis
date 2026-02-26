@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ValidationError
 
 from health import HealthChecker
+from counter import RoundRobinCounter
 
 
 def _service_name_from_url(url: str) -> str:
@@ -54,7 +55,7 @@ SERVICE_NAME_BY_URL = {service["url"]: service["name"] for service in SERVICES}
 
 HTTP_CLIENT: httpx.AsyncClient | None = None
 HEALTH_CHECKER: HealthChecker | None = None
-ROUND_ROBIN_INDEX = 0
+ROUND_ROBIN_COUNTER = RoundRobinCounter(start=0)
 ROUND_ROBIN_LOCK = asyncio.Lock()
 
 router = APIRouter()
@@ -66,21 +67,14 @@ def _get_health_checker() -> HealthChecker:
     return HEALTH_CHECKER
 
 
-async def _set_round_robin_index(next_index: int) -> None:
-    global ROUND_ROBIN_INDEX
-    async with ROUND_ROBIN_LOCK:
-        ROUND_ROBIN_INDEX = next_index
-
-
-async def _ordered_healthy_urls(healthy_urls: list[str]) -> tuple[int, list[str]]:
-    async with ROUND_ROBIN_LOCK:
-        start = ROUND_ROBIN_INDEX
-
+async def _ordered_healthy_urls(healthy_urls: list[str]) -> list[str]:
     if not healthy_urls:
-        return 0, []
+        return []
 
-    start %= len(healthy_urls)
-    return start, healthy_urls[start:] + healthy_urls[:start]
+    async with ROUND_ROBIN_LOCK:
+        start = ROUND_ROBIN_COUNTER.next(len(healthy_urls))
+
+    return healthy_urls[start:] + healthy_urls[:start]
 
 
 async def _fetch_data_from_url(url: str) -> DataResponse | None:
@@ -106,7 +100,7 @@ async def _fetch_data_from_url(url: str) -> DataResponse | None:
 
 
 async def startup_event() -> None:
-    global HTTP_CLIENT, HEALTH_CHECKER, ROUND_ROBIN_INDEX
+    global HTTP_CLIENT, HEALTH_CHECKER, ROUND_ROBIN_COUNTER
 
     HTTP_CLIENT = httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS)
     HEALTH_CHECKER = HealthChecker(
@@ -116,7 +110,7 @@ async def startup_event() -> None:
     )
     await HEALTH_CHECKER.probe_once()
     HEALTH_CHECKER.start()
-    ROUND_ROBIN_INDEX = 0
+    ROUND_ROBIN_COUNTER = RoundRobinCounter(start=0)
 
 
 async def shutdown_event() -> None:
@@ -160,14 +154,13 @@ async def data() -> DataResponse:
             detail="No Storage Services are currently available.",
         )
 
-    start, candidates = await _ordered_healthy_urls(healthy_urls)
+    candidates = await _ordered_healthy_urls(healthy_urls)
 
-    for offset, url in enumerate(candidates):
+    for url in candidates:
         parsed_payload = await _fetch_data_from_url(url)
         if parsed_payload is None:
             continue
 
-        await _set_round_robin_index(start + offset + 1)
         return parsed_payload
 
     raise HTTPException(
