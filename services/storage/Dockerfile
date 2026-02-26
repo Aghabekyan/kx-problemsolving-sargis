@@ -3,7 +3,8 @@ FROM python:3.13-slim
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+ENV PIP_PROGRESS_BAR=off
+RUN pip install --no-cache-dir --progress-bar off -r requirements.txt
 
 COPY src ./src
 

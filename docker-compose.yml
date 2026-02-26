@@ -2,37 +2,50 @@ services:
   gateway:
     build:
       context: ./services/gateway
-    container_name: gateway
-    environment:
-      STORAGE_SERVICES: http://storage1:8000,http://storage2:8000,http://storage3:8000
-      REQUEST_TIMEOUT: "1.5"
-      HEALTH_CHECK_INTERVAL: "3"
     ports:
-      - "8080:8080"
+      - "8080:8000"
+    env_file:
+      - ./services/gateway/.env.gateway
+    networks:
+      app_net:
+        ipv4_address: 172.31.0.10
 
-  storage1:
+  storage-1:
     build:
       context: ./services/storage
-    container_name: storage1
-    environment:
-      SERVICE_NAME: storage1
     ports:
-      - "8001:8000"
+      - "8081:8000"
+    env_file:
+      - ./services/storage/.env.storage-1
+    networks:
+      app_net:
+        ipv4_address: 172.31.0.11
 
-  storage2:
+  storage-2:
     build:
       context: ./services/storage
-    container_name: storage2
-    environment:
-      SERVICE_NAME: storage2
     ports:
-      - "8002:8000"
+      - "8082:8000"
+    env_file:
+      - ./services/storage/.env.storage-2
+    networks:
+      app_net:
+        ipv4_address: 172.31.0.12
 
-  storage3:
+  storage-3:
     build:
       context: ./services/storage
-    container_name: storage3
-    environment:
-      SERVICE_NAME: storage3
     ports:
-      - "8003:8000"
+      - "8083:8000"
+    env_file:
+      - ./services/storage/.env.storage-3
+    networks:
+      app_net:
+        ipv4_address: 172.31.0.13
+
+networks:
+  app_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24
