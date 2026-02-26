@@ -27,6 +27,7 @@ class HealthChecker:
         self._healthy_urls: list[str] = []
         self._statuses: dict[str, str] = {url: "down" for url in all_urls}
         self._task: asyncio.Task[None] | None = None
+        self._state_lock = asyncio.Lock()
 
     @property
     def healthy_urls(self) -> list[str]:
@@ -44,8 +45,9 @@ class HealthChecker:
         )
         statuses: dict[str, str] = {url: status for url, status in results}
         healthy = [url for url, status in results if status == "up"]
-        self._healthy_urls = healthy
-        self._statuses = statuses
+        async with self._state_lock:
+            self._healthy_urls = healthy
+            self._statuses = statuses
 
     async def _probe_url(self, url: str) -> tuple[str, str]:
         try:
@@ -78,7 +80,8 @@ class HealthChecker:
             with suppress(asyncio.CancelledError):
                 await task
 
-    def mark_unhealthy(self, url: str) -> None:
+    async def mark_unhealthy(self, url: str) -> None:
         """Reactively remove a URL from the healthy list (called on request failure)."""
-        self._statuses[url] = "down"
-        self._healthy_urls = [u for u in self._healthy_urls if u != url]
+        async with self._state_lock:
+            self._statuses[url] = "down"
+            self._healthy_urls = [u for u in self._healthy_urls if u != url]

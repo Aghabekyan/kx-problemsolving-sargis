@@ -53,6 +53,6 @@ class GatewayService:
                     url,
                     exc,
                 )
-                self._checker.mark_unhealthy(url)
+                await self._checker.mark_unhealthy(url)
 
         raise NoStorageAvailableError
